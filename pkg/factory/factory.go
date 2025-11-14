@@ -1,33 +1,67 @@
+// pkg/factory/factory.go
+//
+// Package factory provides configuration loading and validation helpers
+// for DCCF. It reads YAML files, applies defaults, validates using
+// govalidator and additional semantic checks, and logs the resulting config.
 package factory
 
 import (
-	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v3"
+	"github.com/asaskevich/govalidator"
+	"github.com/pkg/errors"
+	"gopkg.in/yaml.v2"
+
+	"github.com/free5gc/dccf/internal/logger"
 )
 
-// Loader provides methods to load and validate the configuration.
-type Loader interface {
-	Load(path string) (*Config, error)
+// InitConfigFactory reads the configuration file from the given path into
+// the provided Config structure. It does not perform validation.
+func InitConfigFactory(configPath string, config *Config) error {
+	if configPath == "" {
+		configPath = DccfDefaultConfigPath
+	}
+
+	rawConfig, readError := os.ReadFile(configPath)
+	if readError != nil {
+		return errors.Errorf("failed to read config file [%s]: %+v", configPath, readError)
+	}
+
+	logger.CfgLog.Infof("Read config from [%s]", configPath)
+
+	if unmarshalError := yaml.Unmarshal(rawConfig, config); unmarshalError != nil {
+		return errors.Errorf("failed to unmarshal config file [%s]: %+v", configPath, unmarshalError)
+	}
+
+	return nil
 }
 
-// DefaultLoader is a simple YAML file loader/validator with defaults.
-type DefaultLoader struct{}
+// ReadConfig loads, applies defaults, validates, and prints the DCCF config.
+// It is the main entry point used by cmd/main.go at startup.
+func ReadConfig(configPath string) (*Config, error) {
+	config := &Config{}
 
-// Load reads YAML from the given path, applies defaults, and validates.
-func (l *DefaultLoader) Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config file: %w", err)
+	if initError := InitConfigFactory(configPath, config); initError != nil {
+		return nil, errors.Errorf("ReadConfig [%s] error: %+v", configPath, initError)
 	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("unmarshal yaml: %w", err)
+
+	// Allow custom validation tags to be registered before validation.
+	RegisterCustomValidators()
+
+	// Apply default values before running tag-based validation.
+	config.ApplyDefaults()
+
+	// First pass: tag-based validation (required fields, enums, etc.).
+	if _, validationError := govalidator.ValidateStruct(config); validationError != nil {
+		logger.CfgLog.Errorf("[-- PLEASE REFER TO SAMPLE CONFIG FILE COMMENTS --]")
+		return nil, errors.Errorf("config tag validation error: %+v", validationError)
 	}
-	applyDefaults(&cfg)
-	if err := validateConfig(&cfg); err != nil {
-		return nil, fmt.Errorf("validate config: %w", err)
+
+	// Second pass: semantic validation.
+	if semanticError := config.Validate(); semanticError != nil {
+		return nil, errors.Errorf("config semantic validation error: %+v", semanticError)
 	}
-	return &cfg, nil
+
+	config.Print()
+	return config, nil
 }

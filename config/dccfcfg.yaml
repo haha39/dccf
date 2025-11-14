@@ -1,0 +1,33 @@
+info:
+  version: "1.0.0"
+  description: "DCCF MVP - collects UPF EES USER_DATA_USAGE_MEASURES and serves Ndccf northbound"
+
+southbound:
+  listenAddr: "0.0.0.0:8088"      # Location for sending Notify from UPF EES（notifUri : http://這裡/nupf-ee/v1/notify/{upfId}）
+  upstreamUpfs:
+    - id: "upf-a"
+      eesBaseUrl: "http://127.0.0.1:8088/nupf-ee/v1"   # UPF EES base URL
+      periodSec: 10
+
+northbound:
+  listenAddr: "0.0.0.0:8090"
+  enablePush: true
+  defaultPeriodSec: 10
+  batchMaxItems: 500
+  delayToleranceSec: 3
+
+storage:
+  driver: "memory"
+  maxItems: 0       # 0 = no restrictions
+  ttlSec: 0         # 0 = do not clear TTL
+
+security:
+  enableTLS: false
+
+nrf:
+  enableDiscovery: false
+  uri: ""
+
+logging:
+  level: "debug"
+  reportCaller: false
