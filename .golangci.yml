@@ -1,0 +1,200 @@
+# GolangCI-Lint configuration for DCCF
+# This file is intentionally aligned with other free5gc NFs (AMF/SMF/GO-UPF)
+# but slightly relaxed for this MVP implementation (e.g. no depguard on logrus).
+
+version: "2"
+
+run:
+  # Number of linters to run in parallel.
+  concurrency: 4
+
+  # Go version used by the project (free5gc NFs use Go 1.21 as reference).
+  go: "1.24"
+
+  # Non-zero exit code if any issues are found.
+  issues-exit-code: 1
+
+  # Run linters on test files by default.
+  tests: true
+
+  # Allow running multiple golangci-lint instances in parallel (CI).
+  allow-parallel-runners: true
+  allow-serial-runners: true
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
+      # Keep the default sort order similar to AMF/SMF.
+      sort-order:
+        - linter
+        - severity
+        - file
+
+linters:
+  # We explicitly enable a controlled set of linters (default is none).
+  default: none
+
+  enable:
+    # Basic correctness / style
+    - asciicheck       # Non-ASCII in identifiers / comments
+    - bodyclose        # Ensure HTTP response bodies are closed
+    - dogsled          # Too many blank identifiers in assignments
+    - errcheck         # Check that errors are handled
+    - goconst          # Detect duplicated string / numeric literals
+    - gocritic         # Various code quality checks
+    - godox            # TODO/FIXME/BUG/XXX markers
+    - govet            # Go vet (shadow, printf, etc.)
+    - ineffassign      # Detect ineffectual assignments
+    - lll              # Long line linter
+    - misspell         # Detect common English misspellings
+    - nakedret         # Naked return in long functions
+    - noctx            # Context-less external calls (HTTP, DB, etc.)
+    - predeclared      # Predeclared identifiers shadowing
+    - staticcheck      # Powerful static analysis
+    - unconvert        # Unnecessary conversions
+    - unused           # Unused variables, constants, etc.
+    - whitespace       # Simple whitespace rules
+
+settings:
+  staticcheck:
+    # Start from all checks, then disable some style-only rules,
+    # matching AMF/SMF style.
+    checks:
+      - all
+      - -QF1008   # Disable: redundant type switch cases
+      - -SA1019   # Disable: deprecated usage (we may depend on some)
+      - -ST1000   # Disable: incorrect or missing package comment
+      - -ST1003   # Disable: mixed-case naming style
+      - -ST1016   # Disable: naming for receivers
+      - -ST1020   # Disable: unnecessary nil checks
+      - -ST1021   # Disable: unnecessary guard conditions
+
+  errcheck:
+    check-type-assertions: false
+    check-blank: true
+
+  goconst:
+    min-len: 5
+    min-occurrences: 3
+    ignore-string-values:
+      - get
+      - post
+      - put
+      - delete
+      - patch
+      - options
+      - head
+
+  gocritic:
+    disabled-checks:
+      - regexpMust
+    enabled-tags:
+      - diagnostic
+      - performance
+    disabled-tags:
+      - experimental
+    settings:
+      captLocal:
+        paramsOnly: true
+      hugeParam:
+        sizeThreshold: 512
+      ifElseChain:
+        minThreshold: 4
+      rangeValCopy:
+        sizeThreshold: 512
+
+  godox:
+    keywords:
+      - FIXME
+      - BUG
+      - XXX
+
+  govet:
+    enable:
+      - atomicalign
+      - shadow
+      - printf
+    enable-all: false
+    settings:
+      printf:
+        # These are golangci-lint's own logging functions; we leave them
+        # here for compatibility, but they do not affect DCCF code.
+        funcs:
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Infof
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Warnf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Errorf
+          - (github.com/golangci/golangci-lint/pkg/logutils.Log).Fatalf
+      shadow:
+        strict: true
+
+  lll:
+    line-length: 120
+    tab-width: 1
+
+  misspell:
+    locale: US
+
+  nakedret:
+    max-func-lines: 30
+
+  testpackage:
+    # Skip *_test.go files that are explicitly named export/internal tests.
+    skip-regexp: (export|internal)_test\.go
+
+  unused:
+    # Be strict about unused things; this matches AMF/SMF behaviour.
+    field-writes-are-uses: true
+    post-statements-are-reads: true
+    exported-fields-are-used: true
+    parameters-are-used: true
+    local-variables-are-used: true
+    generated-is-used: true
+
+  whitespace:
+    multi-if: false
+    multi-func: false
+
+issues:
+  # We are not using "new issues only" mode for now.
+  new-from-rev: ""
+  new: false
+
+  severity:
+    default: error
+    rules:
+      # If we enable "mnd" in the future (magic numbers), we can keep it
+      # as info-level only. Currently not enabled, but the rule is harmless.
+      - linters:
+          - mnd
+        severity: info
+
+formatters:
+  # Enable code format helpers; normally run in "report only" mode unless
+  # golangci-lint is invoked with --fix.
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/free5gc)
+      custom-order: true
+
+    gofmt:
+      simplify: true
+
+# Do not lint generated, builtin or example code paths (same idea as other NFs).
+exclusions:
+  generated:
+    lax: true
+  paths:
+    - third_party$
+    - builtin$
+    - examples$
